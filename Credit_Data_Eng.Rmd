@@ -1,0 +1,1148 @@
+---
+title: "Credit Data Set"
+author: "Alessandro Lo Verde"
+date: "30/04/2023"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+if (!require(rmarkdown)){
+  install.packages("rmarkdown")
+  library(rmarkdown)
+}
+```
+## Libraries
+
+```{r chunk1}
+library(MASS)
+library(ISLR2)
+
+if (!require(broom)){
+install.packages("broom")
+library(broom)
+}
+if (!require(rlang)){
+install.packages("rlang")
+library(rlang)
+}
+if (!require(dplyr)){
+install.packages("dplyr")
+library(dplyr)
+}
+
+if (!require(Hmisc)){
+install.packages("Hmisc")
+library("Hmisc")
+}
+#pvalue
+if (!require(fastDummies)){
+install.packages("fastDummies")
+library(fastDummies)
+}
+
+if (!require(caTools)){
+install.packages("caTools")    # For Linear regression 
+library(caTools)
+}
+  if (!require(car)){
+install.packages('car')
+library(car)
+  }
+
+#Subset Selection
+
+  if (!require(tidyverse)){
+install.packages('tidyverse')
+library(tidyverse)
+  }
+
+ if (!require(caret)){
+install.packages('caret')
+library(caret)
+ }
+
+ if (!require(leaps)){
+install.packages('leaps')
+library(leaps)
+ }
+
+```
+
+-----------------------------------------------------------------
+
+Let's define the working directory.
+
+```{r}
+rm(list = ls())
+setwd("/Users/alessandroloverde/Library/Mobile Documents/com~apple~CloudDocs/Master Statistical Learning e Data Science/Z - Past Courses/Statistical Inference and Modeling/Assignment Credit/")
+```
+
+### 1. Dataset Credit.csv 
+
+The Credit.csv dataset from Tbishirani's book contains n = 4000 observations of 11 variables related to n cardholders. 
+
+The response variable is Balance (average credit card debt balance for each individual).
+The quantitative variables are as follows: 
+
+- Age, 
+- Cards (number of credit cards),
+- Education (years of education), 
+- Income (in thousands of dollars), 
+- Limit (credit limit granted),
+- Rating (credit rating held).
+
+Qualitative variables are: 
+
+- Own (home ownership or not: Yes/ No),
+- Married (married status or not: Yes/ No),
+- Student (student status or not: Yes/ No),
+- Region (Region of the U.S.: West, East, South).
+
+```{r}
+dataC = read.csv("Credit.csv", header = TRUE)
+```
+
+### 2. Scatterplots
+
+Each panel in the following figures is a scatterplot for a pair of quantitative variables in the dataset.
+
+Here we present the most relevant scatterplots:
+
+- Those related to Balance, with the variables showing the highest correlation (we will see later) with it (Income, Limit, Age, Cards);
+
+- The scatterplot showing the almost perfect correlation between rating and limit (later we will decide to keep only the limit variable).
+
+```{r}
+
+'Balance'
+
+plot(dataC$Balance,dataC$Income)
+plot(dataC$Balance,dataC$Limit)
+plot(dataC$Balance,dataC$Age)
+plot(dataC$Balance,dataC$Cards)
+
+'Limit'
+
+
+plot(dataC$Limit,dataC$Rating)
+```
+
+### 3. Dummies 
+
+Suppose we want to study the differences in credit card debt balance between those who own a home and those who do not, ignoring the other variables for the time being.
+
+If a qualitative predictor has only two possible values, simply create an indicator or dummy variable that takes on two possible numerical values.
+
+Take for example the 0/1 values for the variables Student, Married, Own.
+
+In the special case of Region, which contains three variables (East, West, South), we create three variables that turn on and off when the relationship belongs to one region or another.
+
+Finally, we substitute columns with dummies for columns with qualitative variables in the dataset.
+
+```{r}
+'Create Dummies variables (Own, Student, Married, Region) -> 0/1'
+
+Dummies <- dummy_cols(dataC, select_columns = c("Own","Student","Married", "Region"))
+
+dataDummies <-cbind ( dataC, Dummies$Own_Yes, Dummies$Student_Yes, Dummies$Married_Yes, Dummies$Region_East, Dummies$Region_South, Dummies$Region_West)
+
+dataDummies$Own <- NULL
+dataDummies$Student <- NULL
+dataDummies$Married <- NULL
+dataDummies$Region <- NULL
+
+dataDummies <- dataDummies %>% 
+  rename("Own_Yes" = "Dummies$Own_Yes",
+         "Student_Yes" = "Dummies$Student_Yes", 
+         "Married_Yes" = "Dummies$Married_Yes", 
+         "Region_East" = "Dummies$Region_East", 
+         "Region_South" = "Dummies$Region_South", 
+         "Region_West" = "Dummies$Region_West")
+
+```
+
+### 4.1 Dummies: Linear Regression of Own (0/1) on Balance
+
+Based on the new Own variable (Own_i = 1 if the ith person owns a house, Own_i = 0 if the ith person does not own a house), we can use this as a predictor in the regression model defined as follows:
+
+Balance_i = β_0 + β_1*Own_i + εi
+
+ -> Balance_i (i-th person does not own a house) = β_0 + εi
+ 
+ -> Balance_i (i-th person owns a house) = β_0 + β_1+ εi
+ 
+- β_0 can be interpreted as the average balance of debt in the credit card among those who do not own a house, 
+- β_0 + β_1 can be interpreted as the average balance of debt in credit card among those who own a house 
+- β_1 can be interpreted as the average difference in average credit card debt balance among homeowners and non-homeowners.
+
+The average credit card debt for nonowners is estimated at $509.80, while owners are estimated to have an additional debt of $19.73, for a total of $509.80 + $19.73 = $529.53. However, we note that the p-value for the dummy variable is very high. This indicates that there is not strong statistical evidence in this model of a difference in the average credit card balance due to 'having home ownership.
+
+The table that will be printed at the end shows the coefficient estimates and other information associated with the model (standard deviation in coefficient estimation, t- statistic, p-value). 
+
+At the moment we are considering ways to include our dummies, the model is definitely not complete and not exhaustive, for example by simply seeing the R^2 = 0.0004 we realize how very low a value it has.
+
+```{r}
+'Regression of Balance onto own in the Credit Data Set (Own hose 0/1)'
+
+dataDummies.Balance.lm.Own <- lm(Balance ~ Own_Yes, data = dataDummies)
+
+print("The R squared of the lm of Balance onto own in the Credit Data Set is:")
+summary(dataDummies.Balance.lm.Own )$r.squared
+
+
+β_0.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[1,1]
+β_1.Balance.Own <- summary(dataDummies.Balance.lm.Own )$coefficients[2,1]
+predicted.Balance.Own = β_0.Balance.Own + β_1.Balance.Own
+sigma_0.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[1,2]
+sigma_1.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[2,2]
+t_0.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[1,3]
+t_1.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[2,3]
+pvalue_0.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[1,4]
+pvalue_1.Balance.Own <- summary(dataDummies.Balance.lm.Own)$coefficients[2,4]
+
+#create matrix
+
+data.Balance.Own  <- matrix(formatC(c(β_0.Balance.Own, β_1.Balance.Own , predicted.Balance.Own, sigma_0.Balance.Own, sigma_1.Balance.Own, 0, t_0.Balance.Own, t_1.Balance.Own , 0, pvalue_0.Balance.Own, pvalue_1.Balance.Own , 0),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Own) <- c('β_0 ', 'β1','β0 + β1')
+colnames(data.Balance.Own) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Own  <- as.table(data.Balance.Own )
+
+#display table
+
+data.Balance.Own
+
+```
+
+### 4.2 Dummies: Liknear Regression of Own (-1/1) on Balance
+
+As an alternative to a 0/1 coding scheme, we could create a dummy variable (Own_i = 1 if the i-th person owns a house, Own_i = -1 if the i-th person does not own a house) and use this variable in the regression equation. 
+ 
+We thus obtain the model:
+ 
+ Balance_i = β_0 + β_1*Own_i + εi
+ 
+ -> Balance_i (i-th person owns a house) = β_0 + β_1 + εi
+ -> Balance_i (i-th person does not own a house) = β_0 - β_1 + εi
+ 
+- β_0 can be interpreted as the overall average balance of debt in the credit card (ignoring the effect of home ownership);
+
+- β_1 can thus be interpreted as the positive (negative) difference between the average balance of debt in the credit card of owners (non-owners) and the overall average balance of debt in the credit card (ignoring the effect of home ownership). 
+
+Therefore:
+
+- β0 + β1 Average balance of debt in credit card among homeowners;
+
+- β0 - β1 Average balance of debt in credit card among non-homeowners;
+In this example, the estimate for β_0 is $519.665, midway between the averages of $509.80 and $529.53 of non-homeowners and homeowners.
+
+The estimate for β_1 is $9.865, half of $19.73, the average difference between owners and nonowners. 
+
+It is important to note that the final predictions, compared to the previous model, for owner and nonowner balances will be identical, regardless of the coding scheme used.
+The difference between this approach and the previous one lies in how the coefficients can be interpreted.
+
+Again, we are considering ways to fit our dummies and the intepretation of the coefficients; the model is certainly not complete and not exhaustive (R^2 = 0.0004).
+
+```{r}
+
+'Create Dummies variables (Own) -1/1'
+
+dataDummies2 <- dataDummies
+dataDummies2$Own_Yes <- replace(dataDummies2$Own_Yes, dataDummies2$Own_Yes == 0, -1) 
+
+'Regression of Balance onto own in the Credit Data Set (Own hose -1/1)'
+
+dataDummies2.Balance.lm.Own <- lm(Balance ~ Own_Yes, data = dataDummies2)
+
+print("The R squared of the lm of Balance onto own in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Own )$r.squared
+
+
+β_0.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[1,1]
+β_1.Balance.Own <- summary(dataDummies2.Balance.lm.Own )$coefficients[2,1]
+predicted.Balance.Own = β_0.Balance.Own + β_1.Balance.Own
+predicted.Balance.NotOwn = β_0.Balance.Own - β_1.Balance.Own
+sigma_0.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[1,2]
+sigma_1.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[2,2]
+t_0.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[1,3]
+t_1.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[2,3]
+pvalue_0.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[1,4]
+pvalue_1.Balance.Own <- summary(dataDummies2.Balance.lm.Own)$coefficients[2,4]
+#create matrix
+
+data.Balance.Own.2  <- matrix(formatC(c(β_0.Balance.Own, β_1.Balance.Own , predicted.Balance.Own, predicted.Balance.NotOwn, sigma_0.Balance.Own, sigma_1.Balance.Own, 0, 0, t_0.Balance.Own, t_1.Balance.Own , 0, 0, pvalue_0.Balance.Own, pvalue_1.Balance.Own , 0, 0),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Own.2) <- c('β_0 ', 'β1','β0 + β1', 'β0 - β1 ')
+colnames(data.Balance.Own.2) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Own.2  <- as.table(data.Balance.Own.2)
+
+#display table
+
+data.Balance.Own.2
+
+```
+### 4.3 Dummies: Qualitative predictors with more than two categories
+
+When a qualitative predictor has more than two categories, a single dummy variable cannot represent all possible values. 
+
+In this situation, we need to create additional dummy variables.
+
+For example, for the variable Region (East, West, South) we created two dummy variables.
+
+The first is: 
+
+-> Region_South_i = 1 The i-th person is from the South.
+-> Region_South_i = 0 The i-th person is not from the South.
+
+The second is:
+-> Region_West_i = 1 The i-th person is from the West
+-> Region_West_i = 0 The i-th person is not from the West
+
+So both variables can be used in the regression equation, to get the model:
+
+ Balance_i = β_0 + β_1*Region_South_i + β_2*Region_West_i + εi
+ 
+-> Balance_i (i-th person is from the South) = β_0 + β_1 + εi
+-> Balance_i (i-th person is from the West) = β_0 + β_2 + εi
+-> Balance_i (i-th person is from the East) = β_0 + εi
+
+- β_0 can be interpreted as the average debt balance in the credit card for individuals from the East (because not from the South and not from the West), 
+- β_1 can be interpreted as the difference between the average balance between individuals from the South and those from the East
+- β_2 can be interpreted as the difference between the average balance between those in the West and those in the East. 
+
+There will always be one less dummy variable than the number of qualitative categories in the qualitative variable. 
+The category with which we do not associate any dummy variable (East in this example) is known as Baseline.
+
+The category chosen as baseline is arbitrary, and the final predictions for each group will be the same regardless of this choice. However, the coefficients and their p-values depend on the choice of coding of the dummy variable.
+
+The table shows that the estimated balance for reports located in the East, is $531.00. 
+
+It is estimated that those in the West will owe $18.69 less than those in the East and that those in the South will owe $12.50 less than those in the East. 
+However, the p-values associated with the coefficient estimates for the two dummy variables are very large, suggesting that there is not a strong statistic of a real difference in the average credit card balance between South and East or between West and East. 
+
+In addition to relying on the individual coefficient estimates and their p-values, we can use an F-test to jointly test H0: β1 = β2 = 0; and the result of this test does not depend on coding. 
+This F-test has a p-value of 0.96, which indicates that we cannot reject the null hypothesis -> no relationship between Balance and Region.
+
+```{r}
+
+#define function to extract overall p-value of model
+overall_p <- function(my_model) {
+    f <- summary(my_model)$fstatistic
+    p <- pf(f[1],f[2],f[3],lower.tail=F)
+    attributes(p) <- NULL
+    return(p)
+}
+
+'Qualitative Predictors with More than Two Levels (Region South, West or East)'
+
+dataDummies2.Balance.lm.Region_South.Region_West <- lm(Balance ~ Region_South + Region_West, data = dataDummies2)
+
+print("The R squared of the lm of Balance onto own in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Region_South.Region_West)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Region_South.Region_West)
+
+β_0.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[1,1]
+β_1.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[2,1]
+β_2.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[3,1]
+
+predicted.Balance.Region_South = β_0.Balance.Region_South.Region_West + β_1.Balance.Region_South.Region_West
+predicted.Balance.Region_West = β_0.Balance.Region_South.Region_West + β_2.Balance.Region_South.Region_West
+
+sigma_0.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[1,2]
+sigma_1.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[2,2]
+sigma_2.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[3,2]
+
+t_0.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[1,3]
+t_1.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[2,3]
+t_2.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[3,3]
+
+pvalue_0.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[1,4]
+pvalue_1.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[2,4]
+pvalue_2.Balance.Region_South.Region_West <- summary(dataDummies2.Balance.lm.Region_South.Region_West)$coefficients[3,4]
+
+#create matrix
+
+data.Balance.Region_South.Region_West <- matrix(formatC(c(β_0.Balance.Region_South.Region_West, β_1.Balance.Region_South.Region_West , β_2.Balance.Region_South.Region_West, predicted.Balance.Region_South, predicted.Balance.Region_West, 0, sigma_0.Balance.Region_South.Region_West, sigma_1.Balance.Region_South.Region_West, sigma_2.Balance.Region_South.Region_West, 0, 0, 0, t_0.Balance.Region_South.Region_West, t_1.Balance.Region_South.Region_West, t_2.Balance.Region_South.Region_West, 0, 0,f[1], pvalue_0.Balance.Region_South.Region_West, pvalue_1.Balance.Region_South.Region_West, pvalue_2.Balance.Region_South.Region_West, 0, 0, p.Value.f),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Region_South.Region_West) <- c('β_0 (East)', 'β_1 (South versus the East)','β_2 (West versus East)','β0 + β1 (South)', 'β0 + β2 (West)', 'F-Test (H0 : β1 = β2 = 0)')
+
+colnames(data.Balance.Region_South.Region_West) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Region_South.Region_West  <- as.table(data.Balance.Region_South.Region_West)
+
+#display table
+
+data.Balance.Region_South.Region_West
+
+```
+### 4.4 Qualitative predictors and quantitative predictors
+
+It is possible to implement multiple variable regression models that incorporate quantitative and qualitative predictors jointly. 
+
+For example, we can regress Balance on a quantitative variable such as Income and a qualitative variable such as Student.
+
+To do this, we simply need to create a dummy variable for student status and then apply a multiple regression model using Income (Income) and the dummy variable Student_Yes as predictors of credit card balance (Balance).
+
+The dummy for Student_Yes student status is:
+-> Student_Yes_i = 1 The i-th person is a student.
+-> Student_Yes_i = 0 The i-th person is a student.
+
+Thus, by fitting both variables into the regression equation, we get the model:
+
+ Balance_i = β_0 + β_1 * Income_i + β_2 * Student_Yes_i _i + εi
+ 
+-> Balance_i (i-th person is a Student) = β_0 + β_1 * Income_i + β_2 + εi
+-> Balance_i (i-th person is not a Student) = β_0 + β_1 * Income_i + εi
+
+We can give such an interpretation to the coefficients in this case:
+
+- β_0 : average credit card debt balance among individuals who are not students and have theoretically 0 Income;
+
+- β_1 : observed difference in the average debt balance for each additional unit of Income;
+
+- β_2 : observed difference in average debt balance between students and non-students;
+
+- β0 + β2 : average debt balance in the credit card among individuals who are students and have theoretically 0 Income;
+
+The coefficients are all statistically significant and the F-test to jointly test H0 : β1 = β2 = 0 has a p-value close to zero, indicating that we can reject with confidence the null hypothesis that there is jointly no relationship between Balance and Income , Student status.
+
+The $R^2$ = 0.28 is still not satisfactory, so we probably need to include other regressors in our model.
+
+```{r}
+
+'Qualitative Predictors with quantitative predictors (Income and Student)'
+
+dataDummies2.Balance.lm.Income.Student_Yes <- lm(Balance ~ Income + Student_Yes, data = dataDummies2)
+
+print("The R squared of the lm of Balance onto Income and Student (0/1) in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Income.Student_Yes)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Income.Student_Yes)
+
+β_0.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[1,1]
+β_1.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[2,1]
+β_2.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[3,1]
+
+predicted.Income.Student_No_zeroincome = β_0.Balance.Income.Student_Yes 
+predicted.Income.Student_Yes_zeroincome  = β_0.Balance.Income.Student_Yes + β_2.Balance.Income.Student_Yes
+
+sigma_0.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[1,2]
+sigma_1.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[2,2]
+sigma_2.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[3,2]
+
+t_0.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[1,3]
+t_1.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[2,3]
+t_2.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[3,3]
+
+pvalue_0.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[1,4]
+pvalue_1.Balance.Income.Student_Yes<- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[2,4]
+pvalue_2.Balance.Income.Student_Yes <- summary(dataDummies2.Balance.lm.Income.Student_Yes)$coefficients[3,4]
+
+#create matrix
+
+data.Balance.Income.Student_Yes <- matrix(formatC(c(β_0.Balance.Income.Student_Yes, β_1.Balance.Income.Student_Yes , β_2.Balance.Income.Student_Yes, predicted.Income.Student_Yes_zeroincome, 0, sigma_0.Balance.Income.Student_Yes, sigma_1.Balance.Income.Student_Yes, sigma_2.Balance.Income.Student_Yes, 0, 0, t_0.Balance.Income.Student_Yes, t_1.Balance.Income.Student_Yes, t_2.Balance.Income.Student_Yes, 0,f[1], pvalue_0.Balance.Income.Student_Yes, pvalue_1.Balance.Income.Student_Yes, pvalue_2.Balance.Income.Student_Yes, 0, p.Value.f),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Income.Student_Yes) <- c('β_0', 'β_1','β_2', 'β0 + β2', 'F-Test (H0 : β1 = β2 = 0)')
+
+colnames(data.Balance.Income.Student_Yes) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Income.Student_Yes  <- as.table(data.Balance.Income.Student_Yes)
+
+#display table
+
+data.Balance.Income.Student_Yes
+
+```
+### 5. Removal of the assumption of additivity and linearity
+
+The standard linear regression model provides interpretable results and works quite well in many real-world problems. However, it makes several very restrictive assumptions that are often violated in practice. 
+Two of the most important assumptions state that the relationship between the predictors and the response variable is additive and linear. 
+
+- The additivity hypothesis means that the association between a predictor X_j and response Y does not depend on the values of the other predictors. 
+
+- The linearity hypothesis states that the change in response Y associated with a one-unit change in X_j is constant, regardless of the value of X_j. 
+
+Below we briefly review some common classical approaches to extending the linear model.
+
+### 5.1 Inclusione di interaction Terms (Rimozione della impotesi di additività)
+
+The concept of interaction also applies to qualitative variables or to a combination of quantitative and qualitative variables. 
+An interaction between a qualitative and a quantitative variable has a particularly simple interpretation.
+
+Suppose as in the previous example that we want to predict Balance using the variables Income (quantitative) and student (qualitative). 
+
+In the absence of an interaction term, the model takes the same form as described above:
+
+ Balance_i = β_0 + β_1 * Income_i + β_2 * Student_Yes_i _i + εi
+
+Which we can see as two different regression models:
+
+-> Balance_i (i-th person is a Student) = β_0 + β_1 * Income_i + β_2 + εi
+-> Balance_i (i-th person is not a Student) = β_0 + β_1 * Income_i + εi
+
+Note that these models are substantiated by two parallel straight lines, one for students and one for non-students. 
+The lines for students and non-students have different intercepts, β0 + β2 versus β0, but the same slope, β1. 
+
+The fact that the lines are parallel means that the average effect on the debt balance in the paper of an increase of one unit of Income does not depend on whether the individual is a student or not. 
+
+This is potentially a limitation for the model, since in effect a change in income can have a very different effect on the credit card balance of a student than a non-student.
+
+This limitation can be overcome by adding an interaction variable (Income_i * Student_Yes_i), created by multiplying Income with the dummy variable student status. 
+Our model now becomes:
+
+Balance_i = β_0 + β_1 * Income_i + β_2 * Student_Yes_i _i + β_3 * Income_i * Student_Yes_i + εi
+ 
+-> Balance_i (i-th person is a Student) = β_0 + β_2 + (β_1 + β_3) * Income_i + εi
+-> Balance_i (i-th person is not a Student) = β_0 + (β_1 + β_3) * Income_i + εi
+
+- β_0 : average credit card debt balance among individuals who are not students and have theoretically 0 Income;
+
+- β_1 : observed difference in average debt balance for each additional unit of Income for non-students;
+
+- β_2 : observed difference in average debt balance between students and non-students who have 0 Income;
+
+- β0 + β2: average debt balance in the credit card among individuals who are students and have theoretically 0 Income;
+
+- β_1 + β_3: observed difference in average debt balance for each additional unit of Income for students;
+
+Again, we have two different regression lines for students and non-students. 
+These regression lines have different intercepts as first, β0 + β2 (Students) and β0 (Non-students), but also different slopes, β1+β3 (Students) and β1 (Non-students). 
+
+We note that the slope for students is lower than that for non-students. This suggests that an increase in income is associated with a smaller increase in credit card debt balance among students than among non-students.
+
+This model allows us to test the hypothesis that changes in income may affect the credit card balances of students and non-students differently.
+However, the coefficient β_3 is not very significant (pvalue = 0.25; see table below).
+Doing some tests, not even an interaction variable between Limit and Student_Yes turns out to be significant.
+Therefore, although a more in-depth analysis on the various possibilities can be pursued, in the analysis that follows, we will not continue to look for interaction variables to be included in the model.
+
+
+
+
+```{r}
+
+'Plot of the predicted values for the model without interaction terms'
+
+predicted.Income.Student_No_zeroincome = β_0.Balance.Income.Student_Yes 
+predicted.Income.Student_Yes_zeroincome  = β_0.Balance.Income.Student_Yes + β_2.Balance.Income.Student_Yes
+
+predicted.Income.Student_No = predicted.Income.Student_No_zeroincome + β_1.Balance.Income.Student_Yes * dataDummies2$Income
+predicted.Income.Student_Yes =  predicted.Income.Student_Yes_zeroincome + β_1.Balance.Income.Student_Yes * dataDummies2$Income
+
+plot(dataDummies2$Income, predicted.Income.Student_No, main="Regression of Balance onto Income and Student(0/1) in the Credit Data Set", xlab="Income", ylab="Balance", pch=20, col="red")
+
+lines(dataDummies2$Income, predicted.Income.Student_Yes, main="Regression of Balance onto Income and Student(0/1) in the Credit Data Set", xlab="Income", ylab="Balance", pch=20, col="blue")
+
+'Inclusion of interaction Terms (Remove of the additive assumption)'
+
+'Plot of the predicted values for the model'
+
+dataDummies2.Balance.lm.Income.Student_Yes_X <- lm(Balance ~ Income + Student_Yes + Income * Student_Yes, data = dataDummies2)
+
+β_0.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[1,1]
+β_1.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[2,1]
+β_2.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[3,1]
+β_3.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[4,1]
+
+predicted.Income.Student_No_X_zeroincome = β_0.Balance.Income.Student_Yes_X 
+predicted.Income.Student_Yes_X_zeroincome  = β_0.Balance.Income.Student_Yes_X + β_2.Balance.Income.Student_Yes_X
+
+predicted.Income.Student_No_X = predicted.Income.Student_No_X_zeroincome + β_1.Balance.Income.Student_Yes_X * dataDummies2$Income
+predicted.Income.Student_Yes_X =  predicted.Income.Student_Yes_X_zeroincome + (β_1.Balance.Income.Student_Yes_X + β_3.Balance.Income.Student_Yes_X) * dataDummies2$Income
+
+plot(dataDummies2$Income, predicted.Income.Student_No_X, main="Regression of Balance onto Income, Student(0/1) and Income * Student_Yes", xlab="Income", ylab="Balance", pch=20, col="red")
+
+lines(dataDummies2$Income, predicted.Income.Student_Yes_X, main="Regression of Balance onto Income, Student(0/1) and Income * Student_Yes", xlab="Income", ylab="Balance", pch=20, col="blue")
+
+print("The R squared of the lm of Balance onto Income, Student (0/1) and Income * Student in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Income.Student_Yes_X)
+
+sigma_0.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[1,2]
+sigma_1.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[2,2]
+sigma_2.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[3,2]
+sigma_3.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[4,2]
+
+t_0.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[1,3]
+t_1.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[2,3]
+t_2.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[3,3]
+t_3.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[4,3]
+
+pvalue_0.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[1,4]
+pvalue_1.Balance.Income.Student_Yes_X<- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[2,4]
+pvalue_2.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[3,4]
+pvalue_3.Balance.Income.Student_Yes_X <- summary(dataDummies2.Balance.lm.Income.Student_Yes_X)$coefficients[4,4]
+
+#create matrix
+
+data.Balance.Income.Student_Yes_X <- matrix(formatC(c(β_0.Balance.Income.Student_Yes_X, β_1.Balance.Income.Student_Yes_X , β_2.Balance.Income.Student_Yes_X, β_3.Balance.Income.Student_Yes_X, predicted.Income.Student_Yes_X_zeroincome, β_1.Balance.Income.Student_Yes_X + β_3.Balance.Income.Student_Yes_X, 0, sigma_0.Balance.Income.Student_Yes_X, sigma_1.Balance.Income.Student_Yes_X, sigma_2.Balance.Income.Student_Yes_X, sigma_3.Balance.Income.Student_Yes_X,  0, 0, 0, t_0.Balance.Income.Student_Yes_X, t_1.Balance.Income.Student_Yes_X, t_2.Balance.Income.Student_Yes_X, t_3.Balance.Income.Student_Yes_X, 0, 0,f[1], pvalue_0.Balance.Income.Student_Yes_X, pvalue_1.Balance.Income.Student_Yes_X, pvalue_2.Balance.Income.Student_Yes_X,pvalue_3.Balance.Income.Student_Yes_X, 0, 0, p.Value.f),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Income.Student_Yes_X) <- c('β_0', 'β_1','β_2', 'β_3', 'β0 + β2','β1 + β3', 'F-Test (H0 : β1 = β2 = β3 = 0)')
+
+colnames(data.Balance.Income.Student_Yes_X) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Income.Student_Yes_X  <- as.table(data.Balance.Income.Student_Yes_X)
+
+#display table
+
+data.Balance.Income.Student_Yes_X
+
+```
+
+### 5.2 nclusion of terms of degree >1 (Removal of linearity impotence)
+
+As discussed earlier, the linear regression model assumes a linear relationship between the response and the predictors. In some cases, however, the actual relationship between the response and the predictors may be nonlinear. Here we present a very simple way to directly extend the linear model to fit nonlinear relationships, using polynomial regression.
+
+Analyzing scatterplots heuristically, one could hypothesize a nonlinear relationship between Balance and income, so let us try to fit such a model:
+
+Balance_i = β_0 + β_1 * Income_i + β_2 * Income_i^2 + εi
+
+The use of the poly() function avoids the problem of collinearity of variables of higher degrees to each other, producing polynomials that are orthogonal to each other.
+
+Analyzing the p-values of the model in which we include Income^2 as a predictor, we note that this β_2 is not significant and therefore is not a change we will carry forward into the discussion.
+
+The only other relationship that is significant and might seem nonlinear is the relationship between Balance and limit, so let us try to fit a very simple model of this type:
+
+Balance_i = β_0 + β_1 * Limit_i + β_2 * Limit_i^2 + εi
+
+Analyzing the p-values of the model where we include Limit^2 as a predictor, we notice that this β_2 is significant, and the R^2 associated with this model although very simple is already very high (R^2 = 0.76).
+
+By doing some tests with grades above the second, up to grade 4, the coefficients could be significant. The coefficient associated with grade 3 does not seem to be very significant.
+For simplicity we keep Limit grades up to 4 as candidates; these are predictors that we might consider later in the discussion. 
+
+```{r}
+
+'Inclusion of terms of higher degree (Remove of the linearity assumption)'
+
+'Income^2'
+
+dataDummies2.Balance.lm.Income.Income2 <- lm(Balance ~ poly(Income,2), data = dataDummies2)
+
+β_0.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[1,1]
+β_1.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[2,1]
+β_2.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[3,1]
+
+print("The R squared of the lm of Balance onto Income and Income^2 in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Income.Income2)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Income.Income2)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Income.Income2)
+
+sigma_0.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[1,2]
+sigma_1.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[2,2]
+sigma_2.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[3,2]
+
+t_0.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[1,3]
+t_1.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[2,3]
+t_2.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[3,3]
+
+pvalue_0.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[1,4]
+pvalue_1.Balance.Income.Income2<- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[2,4]
+pvalue_2.Balance.Income.Income2 <- summary(dataDummies2.Balance.lm.Income.Income2)$coefficients[3,4]
+
+#create matrix
+
+data.Balance.Income.Income2 <- matrix(formatC(c(β_0.Balance.Income.Income2, β_1.Balance.Income.Income2 , β_2.Balance.Income.Income2, 0, sigma_0.Balance.Income.Income2, sigma_1.Balance.Income.Income2, sigma_2.Balance.Income.Income2, 0, t_0.Balance.Income.Income2, t_1.Balance.Income.Income2, t_2.Balance.Income.Income2,f[1], pvalue_0.Balance.Income.Income2, pvalue_1.Balance.Income.Income2, pvalue_2.Balance.Income.Income2, p.Value.f), digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Income.Income2) <- c('β_0', 'β_1(grado 1)','β_2 (grado 2)', 'F-Test (H0 : β1 = β2 = 0)')
+
+colnames(data.Balance.Income.Income2) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Income.Income2  <- as.table(data.Balance.Income.Income2)
+
+#display table
+
+data.Balance.Income.Income2
+
+#'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+'Limit^2'
+dataDummies2.Balance.lm.Income.Limit2 <- lm(Balance ~ poly(Limit,2), data = dataDummies2)
+
+
+β_0.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[1,1]
+β_1.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[2,1]
+β_2.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[3,1]
+
+print("The R squared of the lm of Balance onto Limit and Limit^2 in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Income.Limit2)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Income.Limit2)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Income.Limit2)
+
+sigma_0.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[1,2]
+sigma_1.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[2,2]
+sigma_2.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[3,2]
+
+t_0.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[1,3]
+t_1.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[2,3]
+t_2.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[3,3]
+
+pvalue_0.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[1,4]
+pvalue_1.Balance.Income.Limit2<- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[2,4]
+pvalue_2.Balance.Income.Limit2 <- summary(dataDummies2.Balance.lm.Income.Limit2)$coefficients[3,4]
+
+#create matrix
+
+data.Balance.Income.Limit2 <- matrix(formatC(c(β_0.Balance.Income.Limit2, β_1.Balance.Income.Limit2 , β_2.Balance.Income.Limit2, 0, sigma_0.Balance.Income.Limit2, sigma_1.Balance.Income.Limit2, sigma_2.Balance.Income.Limit2, 0, t_0.Balance.Income.Limit2, t_1.Balance.Income.Limit2, t_2.Balance.Income.Limit2,f[1], pvalue_0.Balance.Income.Limit2, pvalue_1.Balance.Income.Limit2, pvalue_2.Balance.Income.Limit2, p.Value.f), digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Income.Limit2) <- c('β_0','β_1 (grado 1)','β_2 (grado 2)', 'F-Test (H0 : β1 = β2 = 0)')
+
+colnames(data.Balance.Income.Limit2) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Income.Limit2  <- as.table(data.Balance.Income.Limit2)
+
+#display table
+
+data.Balance.Income.Limit2
+
+
+#'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+'Limit^4'
+dataDummies2.Balance.lm.Income.Limit4 <- lm(Balance ~ poly(Limit, 4), data = dataDummies2)
+summary(dataDummies2.Balance.lm.Income.Limit4)
+β_0.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[1,1]
+β_1.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[2,1]
+β_2.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[3,1]
+β_3.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[4,1]
+β_4.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[5,1]
+
+print("The R squared of the lm of Balance onto Limit,  Limit^2 and Limit^4 in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Income.Limit4)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Income.Limit4)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Income.Limit4)
+
+sigma_0.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[1,2]
+sigma_1.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[2,2]
+sigma_2.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[3,2]
+sigma_3.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[4,2]
+sigma_4.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[5,2]
+
+t_0.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[1,3]
+t_1.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[2,3]
+t_2.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[3,3]
+t_3.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[4,3]
+t_4.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[5,3]
+
+pvalue_0.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[1,4]
+pvalue_1.Balance.Income.Limit4<- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[2,4]
+pvalue_2.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[3,4]
+pvalue_3.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[4,4]
+pvalue_4.Balance.Income.Limit4 <- summary(dataDummies2.Balance.lm.Income.Limit4)$coefficients[5,4]
+#create matrix
+
+data.Balance.Income.Limit4 <- matrix(formatC(c(β_0.Balance.Income.Limit4, β_1.Balance.Income.Limit4 , β_2.Balance.Income.Limit4, β_3.Balance.Income.Limit4 , β_4.Balance.Income.Limit4, 0, sigma_0.Balance.Income.Limit4, sigma_1.Balance.Income.Limit4, sigma_2.Balance.Income.Limit4, sigma_2.Balance.Income.Limit4, sigma_3.Balance.Income.Limit4, 0, t_0.Balance.Income.Limit4, t_1.Balance.Income.Limit4, t_2.Balance.Income.Limit4,t_3.Balance.Income.Limit4, t_4.Balance.Income.Limit4,f[1], pvalue_0.Balance.Income.Limit4, pvalue_1.Balance.Income.Limit4, pvalue_2.Balance.Income.Limit4,  pvalue_3.Balance.Income.Limit4, pvalue_4.Balance.Income.Limit4, p.Value.f), digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Income.Limit4) <- c('β_0', 'β_1','β_2','β_3','β_4', 'F-Test (H0 : β1 = β2  = β3 = β4 = 0)')
+
+colnames(data.Balance.Income.Limit4) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Income.Limit4  <- as.table(data.Balance.Income.Limit4)
+
+#display table
+
+data.Balance.Income.Limit4
+```
+
+## 6 Heuristic model selection.
+
+## 6.1 Correlation analysis and potential criticality: Collinearity between X_i variables.
+
+Let us try to analyze the correlation table between the variables in the dataset:
+- We note that in order the variables: Limit, Rating, Income, Student, Cards, appear to have higher correlations in modulus with the response variable Balance. 
+- Limit and Rating show some degree of correlation, but the VIF value (index to assess collinearity) turns out to be less than 5, so we will select both for our model.
+- Limit and Rating are perfectly correlated (probably the rating associated with the ratio influences the Limit applied to the overdraft granted); in this case including these two variables in a VIF test blows up their value. The variables are collinear.
+In order to avoid collinearity problems, we will take only one to fit in the model (we arbitrarily choose Limit).
+
+```{r}
+
+res2 <- rcorr(as.matrix(dataDummies2))
+res2
+
+model <- lm(Balance  ~ Income + Limit + Cards + Age + Education , data=dataDummies2)
+  
+#create vector of VIF values
+vif_values <- vif(model)
+
+vif_values
+
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values", horiz = TRUE, col = "steelblue")
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+
+model.rating <- lm(Balance  ~ Income + Limit + Rating + Cards + Age + Education , data=dataDummies2)
+
+  
+#create vector of VIF values(including rating)
+vif_values <- vif(model.rating)
+
+vif_values
+
+#create horizontal bar chart to display each VIF value
+barplot(vif_values, main = "VIF Values (Rating)", horiz = TRUE, col = "steelblue")
+
+#add vertical line at 5
+abline(v = 5, lwd = 3, lty = 2)
+```
+
+## 6.2 Model selected based on highest correlations.
+
+From the previous analysis we select the variables that seem most relevant to our analysis: Income, Limit (Rating), Student, Cards.
+
+This is the resulting model:
+
+Balance_i = β_0 + β_1 * Limit_i + β_2 * Income + β_3 * Student_Yes + β_4 * Cards + εi
+
+Analyzing the plot of the residuals:
+
+- we can see a pattern in the linear residuals, for low value of Balance, we tend to overestimate the value of Balance and for higher values, we tend to underestimate it.
+
+- From the QQ plot we can clearly see that the residuals do not seem to be perfectly approximated by a normal distribution, presenting the empirical distribution of thicker tails.
+
+In general, the model seems to be satisfactory: 
+
+- the R^2 of the model is very high, 
+- the empirical distribution of the model residuals seems to be well centered around 0;
+- all the coefficients of the variables seem to be statistically significant (Cards seems to have the least significant coefficient and is the explanatory variable that probably contributes the least to the model).
+
+```{r}
+
+dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards <- lm(Balance ~ Limit + Income + Student_Yes + Cards, data = dataDummies2)
+
+β_0.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[1,1]
+β_1.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[2,1]
+β_2.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[3,1]
+β_3.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[4,1]
+β_4.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[5,1]
+
+print("The R squared of the lm of Balance onto Limit, Income, Student (0/1) and Cards in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)
+
+sigma_0.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[1,2]
+sigma_1.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[2,2]
+sigma_2.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[3,2]
+sigma_3.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[4,2]
+sigma_4.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[5,2]
+
+t_0.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[1,3]
+t_1.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[2,3]
+t_2.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[3,3]
+t_3.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[4,3]
+t_4.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[5,3]
+
+pvalue_0.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[1,4]
+pvalue_1.Balance.Limit.Income.Student_Yes.Cards<- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[2,4]
+pvalue_2.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[3,4]
+pvalue_3.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[4,4]
+pvalue_4.Balance.Limit.Income.Student_Yes.Cards <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)$coefficients[5,4]
+
+#create matrix
+
+data.Balance.Limit.Income.Student_Yes.Cards <- matrix(formatC(c(β_0.Balance.Limit.Income.Student_Yes.Cards, β_1.Balance.Limit.Income.Student_Yes.Cards , β_2.Balance.Limit.Income.Student_Yes.Cards, β_3.Balance.Limit.Income.Student_Yes.Cards, β_4.Balance.Limit.Income.Student_Yes.Cards ,0, sigma_0.Balance.Limit.Income.Student_Yes.Cards, sigma_1.Balance.Limit.Income.Student_Yes.Cards, sigma_2.Balance.Limit.Income.Student_Yes.Cards, sigma_3.Balance.Limit.Income.Student_Yes.Cards,  sigma_4.Balance.Limit.Income.Student_Yes.Cards, 0, t_0.Balance.Limit.Income.Student_Yes.Cards, t_1.Balance.Limit.Income.Student_Yes.Cards, t_2.Balance.Limit.Income.Student_Yes.Cards, t_3.Balance.Limit.Income.Student_Yes.Cards, t_4.Balance.Limit.Income.Student_Yes.Cards,f[1], pvalue_0.Balance.Limit.Income.Student_Yes.Cards, pvalue_1.Balance.Limit.Income.Student_Yes.Cards, pvalue_2.Balance.Limit.Income.Student_Yes.Cards,pvalue_3.Balance.Limit.Income.Student_Yes.Cards, pvalue_4.Balance.Limit.Income.Student_Yes.Cards, p.Value.f),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Limit.Income.Student_Yes.Cards) <- c('β_0', 'β_1 (Limit)','β_2(Income)', 'β_3(Student)','β_4(Cards)', 'F-Test (H0 : β1 = β2 = β3 = β4 = 0)')
+
+colnames(data.Balance.Limit.Income.Student_Yes.Cards) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Limit.Income.Student_Yes.Cards  <- as.table(data.Balance.Limit.Income.Student_Yes.Cards)
+
+#display table
+
+data.Balance.Limit.Income.Student_Yes.Cards
+
+res <- resid(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)
+#produce residual vs. fitted plot
+plot(fitted(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards), res)
+
+print("The Root Mean Squared Error/AIC/BIC of the lm of Balance onto Limit, Income, Student (0/1) and Cards in the Credit Data Set is:")
+RMSE <- sqrt(mean(res^2))
+RMSE
+Criterions <- glance(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards)
+Criterions
+
+#add a horizontal line at 0 
+abline(0,0)
+
+#create Q-Q plot for residuals
+qqnorm(res)
+
+#add a straight diagonal line to the plot
+qqline(res) 
+
+#Create density plot of residuals
+plot(density(res))
+
+```
+
+## 6.3 Heuristically selected model with variables of degree > 1 
+
+Taking into account the analysis contained in the previous paragraph and in 5.2, we try to include Limit terms of degree greater than first in our model (which heuristically we had noticed had a nonlinear relationship with Balance in the Scatterplots).
+
+Our candidate model chosen based on the correlations and analysis in Section 5.2 of degree greater than first is as follows:
+
+Balance_i = β_0 + β_1 * Income + β_2 * Student_Yes + β_2 * Cards + β_3 * Limit_i + β_4 * Limit_i^2 + β_5 * Limit_i^3 + β_6 * Limit_i^4 εi
+
+In general, the model seems to be good: 
+
+- We notice in the graph of calculated residuals (in the same training set though), how now these are much decreased on average (lower RMSE).
+
+- the R^2 of the model is still higher (we are increasing our regressors though), 
+
+- the distribution of the model residuals seems improved and well centered around 0, and all the coefficients of the variables seem to be statistically significant.
+
+- AIC and BIC of our new model are both lower than those of the previous model. This suggests that the benefits of increased explanatory power outweigh the cost of increased model complexity, according to both information criteria.
+
+As a downside of this model choice there is that we are increasing the (less parsimonious) model by 3 variables without having a huge difference in the results (apart from those mentioned above) and we also get some single errors (few) higher in absolute value than before.
+In addition, we are evaluating the goodness-of-fit of these models with indirect estimates of the test error; a possible extension of this work could be to evaluate these models by splitting between training set and test set and calculating quin the RMSE_Test with a direct estimate to evaluate the optimal model.
+
+In the next section we simply use these indirect estimates of the test error (AIC criteria, BIC, CP...) to select an optimal model and see how much these vary past a certain threshold of 4 variables.
+
+
+```{r}
+
+dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2  <- lm(Balance ~ Income  + Student_Yes +  Cards + poly(Limit,4), data = dataDummies2)
+
+β_0.Balance.Limit.Income.Student_Yes.Cards.Limit2<- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[1,1]
+β_1.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[2,1]
+β_2.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[3,1]
+β_3.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[4,1]
+β_4.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[5,1]
+β_5.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[6,1]
+β_6.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[7,1]
+
+print("The R squared of the lm of Balance onto Income, Student (0/1), Cards and poly(Limit , 4) in the Credit Data Set is:")
+summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$r.squared
+
+f <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$fstatistic
+p.Value.f <- overall_p(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)
+
+sigma_0.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[1,2]
+sigma_1.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[2,2]
+sigma_2.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[3,2]
+sigma_3.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[4,2]
+sigma_4.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[5,2]
+sigma_5.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[6,2]
+sigma_6.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[7,2]
+
+t_0.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[1,3]
+t_1.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[2,3]
+t_2.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[3,3]
+t_3.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[4,3]
+t_4.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[5,3]
+t_5.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[6,3]
+t_6.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[7,3]
+
+pvalue_0.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[1,4]
+pvalue_1.Balance.Limit.Income.Student_Yes.Cards.Limit2<- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[2,4]
+pvalue_2.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[3,4]
+pvalue_3.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[4,4]
+pvalue_4.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[5,4]
+pvalue_5.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[6,4]
+pvalue_6.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- summary(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)$coefficients[7,4]
+
+#create matrix
+
+data.Balance.Limit.Income.Student_Yes.Cards.Limit2 <- matrix(formatC(c(β_0.Balance.Limit.Income.Student_Yes.Cards.Limit2, β_1.Balance.Limit.Income.Student_Yes.Cards.Limit2 , β_2.Balance.Limit.Income.Student_Yes.Cards.Limit2, β_3.Balance.Limit.Income.Student_Yes.Cards.Limit2, β_4.Balance.Limit.Income.Student_Yes.Cards.Limit2 ,β_5.Balance.Limit.Income.Student_Yes.Cards.Limit2 , β_6.Balance.Limit.Income.Student_Yes.Cards.Limit2 , 0, sigma_0.Balance.Limit.Income.Student_Yes.Cards.Limit2, sigma_1.Balance.Limit.Income.Student_Yes.Cards.Limit2, sigma_2.Balance.Limit.Income.Student_Yes.Cards.Limit2, sigma_3.Balance.Limit.Income.Student_Yes.Cards.Limit2,  sigma_4.Balance.Limit.Income.Student_Yes.Cards.Limit2, sigma_5.Balance.Limit.Income.Student_Yes.Cards.Limit2, sigma_6.Balance.Limit.Income.Student_Yes.Cards.Limit2,  0, t_0.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_1.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_2.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_3.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_4.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_5.Balance.Limit.Income.Student_Yes.Cards.Limit2, t_6.Balance.Limit.Income.Student_Yes.Cards.Limit2, f[1], pvalue_0.Balance.Limit.Income.Student_Yes.Cards.Limit2, pvalue_1.Balance.Limit.Income.Student_Yes.Cards.Limit2, pvalue_2.Balance.Limit.Income.Student_Yes.Cards.Limit2,pvalue_3.Balance.Limit.Income.Student_Yes.Cards.Limit2, pvalue_4.Balance.Limit.Income.Student_Yes.Cards.Limit2,pvalue_5.Balance.Limit.Income.Student_Yes.Cards.Limit2, pvalue_6.Balance.Limit.Income.Student_Yes.Cards.Limit2, p.Value.f),digits = 5, format = "f"), ncol=4)
+
+#specify row and column names of matrix
+rownames(data.Balance.Limit.Income.Student_Yes.Cards.Limit2) <- c('β_0', 'β_1','β_2', 'β_3', 'β_4','β_5','β_6', 'F-Test (H0 : β1 = β2 = β3 = β4 = β5 = 0)')
+
+colnames(data.Balance.Limit.Income.Student_Yes.Cards.Limit2) <- c('Coefficient', 'Std. error', 't-statistic', 'p-value')
+
+#convert matrix to table
+data.Balance.Limit.Income.Student_Yes.Cards.Limit2  <- as.table(data.Balance.Limit.Income.Student_Yes.Cards.Limit2)
+
+#display table
+
+data.Balance.Limit.Income.Student_Yes.Cards.Limit2
+
+#Analisi dei residui
+
+res <- resid(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)
+
+print("The Root Mean Squared Error of the lm of Balance onto Limit, Income, Student (0/1) and Cards in the Credit Data Set is:")
+RMSE <- sqrt(mean(res^2))
+RMSE
+
+Criterions <- glance(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)
+Criterions
+
+#produce residual vs. fitted plot
+plot(fitted(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2), res)
+
+#add a horizontal line at 0 
+abline(0,0)
+
+#create Q-Q plot for residuals
+qqnorm(res)
+
+#add a straight diagonal line to the plot
+qqline(res) 
+
+#Create density plot of residuals
+plot(density(res))
+
+```
+
+## 7.1 Forward Stepwise selection:
+
+
+Trying to have a more analytical approach to model selection we try to implement a Forward stepwise selection.
+
+For simplicity we will consider only the 11 variables in the dataset as regressors (no degree > 1, no interaction variables, no Rating because collinear)
+
+Forward Stepwise Method:
+
+1. Let M0 be the model with only the intercept (null model).
+2. for j = 0,...,k-1:
+At each step onsider all k-j models that can be obtained by adding an additional variable to the model M_j;
+The criterion will be to select the model augmented by a variable Mj+1 with lower deviance, calling it Mj+1
+3. The best model is selected from M0, . . . , Mk using in this case AIC.
+
+Compared to the previous model chosen heuristically, the forward stepwise method suggests that we also add the variable Age (previously we had only included Limit, Income, Student, Cards).
+The differences in both model coefficient estimates and indirect test error estimates (AIC, BIC,..) are very small compared to the previous model.
+In addition we note how this is the only coefficient to have significance with p-value > 0.01
+
+Let us try in the next section to anaalyze other selection criteria with the best subset selectio method, plotting the values of BIC, Cp, and adj R2, to see if it is essential to add variables beyond the 4 chosen heuristically.
+
+```{r}
+#define intercept-only model
+dataDummies3 <- dataDummies2
+
+#dataDummies3 <- dataDummies3  %>% mutate (Limit4 = poly(Limit, 4))
+
+dataDummies3$Rating <- NULL
+
+intercept_only <- lm(Balance ~ 1, data = dataDummies3)
+
+#define model with all predictors
+all <- lm(Balance  ~ ., data=dataDummies3)
+
+#perform forward stepwise regression
+forward <- step(intercept_only, direction='forward', scope = formula(all))
+
+#view results of forward stepwise regression
+forward$anova
+
+
+#view final model
+forward$coefficients
+
+Optimal.model <- lm(Balance  ~  Limit + Income + Student_Yes + Cards + Age, data=dataDummies2)
+summary(Optimal.model)
+
+#Analisi dei residui
+
+res <- resid(dataDummies2.Balance.lm.Limit.Income.Student_Yes.Cards.Limit2)
+
+print("The Root Mean Squared Error of the lm of Balance onto poly(Limit, 4), Income, Student (0/1) and Cards in the Credit Data Set is:")
+RMSE <- sqrt(mean(res^2))
+RMSE
+
+Criterions <- glance(Optimal.model)
+Criterions
+
+#produce residual vs. fitted plot
+plot(fitted(Optimal.model), res)
+
+#add a horizontal line at 0 
+abline(0,0)
+
+#create Q-Q plot for residuals
+qqnorm(res)
+
+#add a straight diagonal line to the plot
+qqline(res) 
+
+#Create density plot of residuals
+plot(density(res))
+
+
+```
+
+## 7.2 Best Subset Selection.
+
+The regsubsets() function (part of the leaps library) performs best subset selection by identifying the best model that contains a given number of predictors, where best is quantified using RSS. The syntax is the same as lm(). The summary() command provides the best set of variables for each dimension of the model.
+
+An asterisk ("*") indicates that a given variable is included in the corresponding model.
+By combining the printed table and the graph that makes the selection according to different criteria (adjR2, BIC, CP in particular), we can see which model is selected in this case.
+
+- The adj R2 criterion suggests to us the following 6-variable model:
+Limit, Income, Student, Cards, Age, Own_Yes
+
+- The Cp criterion, suggests us a 5-variable model, which contains the same variables indicated earlier by the forward stepwise method with AIC criterion: Limit, Income, Student, Cards, Age.
+
+The BIC criterion suggests to us the simplest 4-variable model chosen heuristically earlier:
+Limit, Income, Student, Cards
+ 
+Given the different indirect estimates obtained with the various criteria, the choice should fall around the model with 4 or 5 variables, already analyzed earlier.
+
+We note, however, that after adding the fourth variable, all the graphs tend to become very flat, indicating that adding predictors to the model after the first 4 ( Limit, Income, Student, and Cards) does not turn out to have much impact on the estimated error.
+
+```{r}
+
+Complete.model = regsubsets(Balance~., data = dataDummies3, nvmax = 12)
+Complete.model_summary = summary(Complete.model)
+Complete.model_summary
+
+
+# Set up a 2x2 grid so we can look at 4 plots at once
+par(mfrow = c(2,2))
+plot(Complete.model_summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+
+plot(Complete.model_summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "b")
+adj_r2_max = which.max(Complete.model_summary$adjr2) 
+points(adj_r2_max, Complete.model_summary$adjr2[adj_r2_max], col ="red", cex = 2, pch = 20)
+
+plot(Complete.model_summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "b")
+cp_min = which.min(Complete.model_summary$cp) # 10
+points(cp_min, Complete.model_summary$cp[cp_min], col = "red", cex = 2, pch = 20)
+
+plot(Complete.model_summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "b")
+bic_min = which.min(Complete.model_summary$bic) # 6
+points(bic_min, Complete.model_summary$bic[bic_min], col = "red", cex = 2, pch = 20)
+
+coef(Complete.model, 4)
+
+```
+
