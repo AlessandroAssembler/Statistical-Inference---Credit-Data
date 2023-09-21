@@ -1,7 +1,7 @@
 - 👋 Hi, I’m @AlessandroAssembler
 - 👀 I’m interested in Economics, Finance, Pricing, Modeling and Monte Carlo Simulation.
 - 🌱 I’m currently learning C, Python and Statistical learning
-- 💞️ I’m looking to collaborate on ...
+- 💞️ I’m looking to collaborate on Finance, Econometrics and Data science and ML related projects.
 - 📫 How to reach me: ale.loverde95@gmail.com
 
 <!---
