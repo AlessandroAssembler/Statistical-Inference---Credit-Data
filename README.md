@@ -1,5 +1,5 @@
 
-The goal of this analysis will be the evaluation and optimal selection of different linear regressions on the Credit.csv dataset.
+The goal of this analysis will be the evaluation and optimal selection of different linear regression models on the Credit.csv dataset.
 
 The Credit.csv dataset from Tbishirani's book contains n = 4000 observations of 11 variables related to n cardholders. 
 
